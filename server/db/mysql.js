@@ -7,10 +7,6 @@ export async function openMysql(cfg) {
     throw new Error('mysql2 is not installed. Run "npm install" (it is a declared dependency).');
   }
 
-  if (cfg.ssl && !cfg.sslCa && process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false') {
-    throw new Error('DB_SSL_CA is required when MySQL SSL is enabled');
-  }
-
   const pool = mysql.createPool({
     host: cfg.host,
     port: cfg.port,
@@ -41,6 +37,7 @@ export async function openMysql(cfg) {
 
   const adapter = {
     engine: 'mysql',
+    pool,
     ...make(pool),
     async exec(sql) {
       await pool.query(sql);

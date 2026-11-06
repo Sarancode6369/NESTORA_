@@ -44,9 +44,36 @@ notepad .env                       # replace the placeholders, save
 | `GROQ_API_KEY` | Groq key; backend only, never sent to the browser. Empty ⇒ fallback mode |
 | `GROQ_MODEL`, `AI_TIMEOUT_MS`, `AI_MIN_CONFIDENCE`, `AI_MAX_CALLS_PER_MIN` | optional AI tuning |
 | `SEED_DEMO_DATA` | `false` to skip loading the demo township into an empty database |
+| `DB_SSL` | `true` to enforce TLS when not already specified in `DATABASE_URL` |
+| `DB_SSL_CA` | Optional CA certificate (PEM format) for databases using private/custom CAs (e.g. Aiven) |
+| `DB_SSL_REJECT_UNAUTHORIZED` | defaults to `true` (strict TLS validation); set to `false` only for dev/testing |
 
 `.env` is git-ignored (so are `.env.*`, except `.env.example`). The example file ships placeholder values
 (`your_mysql_username`, `your_mysql_password`); the app refuses to start with them and tells you to replace them.
+
+### MySQL SSL Configuration (Cloud & Managed Databases)
+
+NESTORA connects to MySQL over TLS with certificate verification enabled by default (`rejectUnauthorized: true`).
+
+1. **Standard Cloud Providers with Public CA Certificates (AWS RDS, PlanetScale, DigitalOcean, Google Cloud SQL, Supabase, Azure):**
+   * These services use SSL certificates signed by publicly trusted root Certificate Authorities (e.g. DigiCert, Amazon Trust Services, Let's Encrypt).
+   * Node.js verifies these automatically using its built-in public CA trust store.
+   * **Required setting:** Add `?ssl=true` to `DATABASE_URL` or set `DB_SSL=true`.
+   * `DB_SSL_CA` is **not required**.
+
+2. **Custom / Private CA Providers (e.g., Aiven, corporate internal CAs):**
+   * Download the CA certificate (`ca.pem`) from the hosting provider.
+   * Set the environment variable `DB_SSL_CA` to the full PEM string (multiline or with literal `\n`).
+   * Example: `DB_SSL_CA="-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"`
+
+3. **Vercel Serverless Deployment:**
+   * Configure environment variables in the Vercel Dashboard (Settings → Environment Variables):
+     * `DATABASE_URL`: `mysql://<host>:<port>/<database>?ssl=true`
+     * `DB_USERNAME`: your database username
+     * `DB_PASSWORD`: your database password
+     * `JWT_SECRET`: generated secret
+     * `NODE_ENV`: `production`
+     * `DB_SSL_CA`: (only if using a custom/private CA)
 
 ## 3. Install, initialise, run
 

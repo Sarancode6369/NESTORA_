@@ -9,12 +9,24 @@ export function dbConfigFromEnv(env = process.env) {
   let u;
   try { u = new URL(env.DATABASE_URL.replace(/^jdbc:/, '')); } catch { throw new Error('DATABASE_URL is not a valid URL (example: mysql://localhost:3306/nestora)'); }
   if (!/^mysql/.test(u.protocol)) throw new Error('DATABASE_URL must start with mysql://');
+  const sslParam = u.searchParams.get('ssl');
+  const sslMode = u.searchParams.get('sslmode')?.toLowerCase();
+  const sslEnabled =
+    sslParam === 'true' ||
+    sslParam === '1' ||
+    sslMode === 'require' ||
+    sslMode === 'required' ||
+    sslMode === 'verify-ca' ||
+    sslMode === 'verify-full' ||
+    env.DB_SSL === 'true' ||
+    env.DB_SSL === '1' ||
+    Boolean(env.DB_SSL_CA);
   return {
     host: u.hostname, port: Number(u.port || 3306), database: decodeURIComponent(u.pathname.replace(/^\//, '')),
     user: env.DB_USERNAME || decodeURIComponent(u.username) || undefined,
     password: env.DB_PASSWORD ?? (decodeURIComponent(u.password) || undefined),
-    ssl: u.searchParams.get('ssl') === 'true' || u.searchParams.get('sslmode') === 'require' || env.DB_SSL === 'true' || !!env.DB_SSL_CA,
-    sslCa: env.DB_SSL_CA?.replace(/\\n/g, '\n'),
+    ssl: sslEnabled,
+    sslCa: env.DB_SSL_CA ? env.DB_SSL_CA.replace(/\\n/g, '\n') : undefined,
   };
 }
 export const safeDescribe = (c) => `${c.user || '?'}@${c.host}:${c.port}/${c.database}`; // never prints the password

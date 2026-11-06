@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { makeCtx } from './helpers.js';
 import { applySchema, openDatabase } from '../server/db/index.js';
+import { openMysql } from '../server/db/mysql.js';
 import { importLegacy } from '../server/db/import.js';
 import { importJsonSnapshot, resetDemo, wipeAll, initDatabase } from '../server/db/bootstrap.js';
 import { dbConfigFromEnv, safeDescribe } from '../server/db/config.js';
@@ -133,4 +134,51 @@ test('database configuration comes from the environment and never prints the pas
 });
 test('opening without DATABASE_URL fails loudly instead of silently using a file', async () => {
   await assert.rejects(openDatabase({ env: {} }), /DATABASE_URL is not set/);
+});
+test('MySQL SSL configuration: disabled, enabled without CA (public CAs), and enabled with custom CA', async () => {
+  // 1. SSL disabled: DATABASE_URL without ssl
+  const cfgDisabled = dbConfigFromEnv({
+    DATABASE_URL: 'mysql://db.example.com:3306/nestora',
+    DB_USERNAME: 'app_user',
+    DB_PASSWORD: 's3cret!',
+  });
+  assert.equal(cfgDisabled.ssl, false);
+  assert.equal(cfgDisabled.sslCa, undefined);
+  const dbDisabled = await openMysql(cfgDisabled);
+  assert.equal(dbDisabled.pool.pool.config.connectionConfig.ssl, undefined);
+  await dbDisabled.close();
+
+  // 2. SSL enabled without custom CA: public CA providers (e.g. AWS RDS, PlanetScale, DigitalOcean)
+  // Tested via ?ssl=true in DATABASE_URL, DB_SSL=true, and ?sslmode=require
+  for (const env of [
+    { DATABASE_URL: 'mysql://db.example.com:3306/nestora?ssl=true', DB_USERNAME: 'app_user', DB_PASSWORD: 's3cret!' },
+    { DATABASE_URL: 'mysql://db.example.com:3306/nestora', DB_USERNAME: 'app_user', DB_PASSWORD: 's3cret!', DB_SSL: 'true' },
+    { DATABASE_URL: 'mysql://db.example.com:3306/nestora?sslmode=require', DB_USERNAME: 'app_user', DB_PASSWORD: 's3cret!' },
+  ]) {
+    const cfgPublic = dbConfigFromEnv(env);
+    assert.equal(cfgPublic.ssl, true);
+    assert.equal(cfgPublic.sslCa, undefined);
+    // Does NOT throw "DB_SSL_CA is required when MySQL SSL is enabled"
+    const dbPublic = await openMysql(cfgPublic);
+    // Certificate verification is preserved by default (rejectUnauthorized: true)
+    assert.deepEqual(dbPublic.pool.pool.config.connectionConfig.ssl, { rejectUnauthorized: true });
+    await dbPublic.close();
+  }
+
+  // 3. SSL enabled with custom CA: private CA providers (e.g. Aiven, internal CA)
+  const fakePem = '-----BEGIN CERTIFICATE-----\nMIIDXTCCAkWgAwIBAgIJAL9\n-----END CERTIFICATE-----';
+  const cfgCustom = dbConfigFromEnv({
+    DATABASE_URL: 'mysql://db.example.com:3306/nestora',
+    DB_USERNAME: 'app_user',
+    DB_PASSWORD: 's3cret!',
+    DB_SSL_CA: fakePem.replace(/\n/g, '\\n'),
+  });
+  assert.equal(cfgCustom.ssl, true);
+  assert.equal(cfgCustom.sslCa, fakePem);
+  const dbCustom = await openMysql(cfgCustom);
+  assert.deepEqual(dbCustom.pool.pool.config.connectionConfig.ssl, {
+    ca: fakePem,
+    rejectUnauthorized: true,
+  });
+  await dbCustom.close();
 });
